@@ -133,7 +133,7 @@ Automatic mode falls back to English.
 * Fixed the stylesheet and script of the country selector not loading after the 3.2.13 text domain change (the flags and styling were missing).
 
 = 3.2.13 =
-* Changed the text domain to oliforge-country-select-for-contact-form-7 to match the plugin directory slug. Translation files were renamed accordingly; there are no functional changes.
+* Changed the text domain to oliforge-country-select-for-contact-form-7 to match the plugin directory slug. Translation files were renamed accordingly. This version has a display bug (see 3.2.14): the country selector's stylesheet and script were not loaded.
 
 = 3.2.12 =
 * Fixed the documented syntax: several ISO codes in include:, exclude: and preferred: are separated with "|" (for example include:UA|PL|DE). Contact Form 7 does not parse commas in tag options, so the former comma examples in the readme and the tag generator placeholders produced a tag that was not recognized.
