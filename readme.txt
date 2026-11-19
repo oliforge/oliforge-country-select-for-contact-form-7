@@ -137,7 +137,8 @@ Automatic mode falls back to English.
 
 1. The country selector in a Contact Form 7 form: searchable dropdown with local SVG flags.
 2. Type a name or ISO code to filter the list instantly.
-3. Settings page: choose the name language and enable or disable countries globally.
+3. Settings page: choose the name language, set an optional default country and up to three pinned countries, and enable or disable countries globally.
+4. The result in a form: Ukraine preselected as the default, with Poland, Germany and the United Kingdom pinned at the top of the list.
 
 == Changelog ==
 
