@@ -13,3 +13,7 @@ delete_option( 'oliforge_cf7_country_select_allowed_countries' );
 delete_option( 'oliforge_cf7_country_select_display_language' );
 
 delete_option( 'oliforge_cf7_country_select_validation_border' );
+
+delete_option( 'oliforge_cf7_country_select_preset_enabled' );
+delete_option( 'oliforge_cf7_country_select_preset_default' );
+delete_option( 'oliforge_cf7_country_select_preset_preferred' );

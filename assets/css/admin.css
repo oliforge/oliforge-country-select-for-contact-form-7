@@ -561,3 +561,5 @@
     border-color:var(--oli-primary);
     color:#fff
 }
+
+.oliforge-country-settings .oliforge-preset-toggle{color:var(--oli-primary-active);font-weight:600}

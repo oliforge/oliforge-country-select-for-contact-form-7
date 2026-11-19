@@ -5,7 +5,7 @@ Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 7.4
 Requires Plugins: contact-form-7
-Stable tag: 3.2.15
+Stable tag: 3.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -29,6 +29,8 @@ Features:
 * Developer filters for country data, translated names and allowed countries.
 * Minified production CSS and JavaScript.
 * Per-field include, exclude, preferred-country and default-country controls.
+* Optional global preset: one default country and up to three pinned countries for every selector, set on the settings page.
+* Search results are ranked: an exact ISO code first ("ua" finds Ukraine), then names that start with what you typed.
 * Support for id, class, tabindex, autocomplete, aria-* and data-* form-tag attributes.
 * Placeholder can be selected again to clear the field; required fields then fail validation correctly.
 * Mail-tag output shows the full translated country name with its ISO code, e.g. Ukraine (UA); submitted values used by integrations remain the plain ISO code.
@@ -68,7 +70,13 @@ Advanced examples (separate several ISO codes with a vertical bar "|"; Contact F
 [country_select country preferred:UA|PL|DE default:UA]
 [country_select country default:auto]
 
-The default:auto option uses the region part of the current WordPress locale when available, for example uk_UA => UA.
+The default:auto option uses the region part of the current WordPress locale (not the visitor's IP address) when available, for example uk_UA => UA. If that country is not among the allowed countries, or the locale has no region, nothing is preselected.
+
+Placeholder text can be written either as a quoted value after the flag or as an option:
+[country_select* country placeholder "Choose your country"]
+[country_select* country placeholder:Choose]
+
+The include option is strict: if it is written but contains no valid ISO code (for example include:UKR), the field accepts no country at all instead of opening the whole list. Pinned countries (preferred:) appear at the top in the order they are written.
 
 == Settings ==
 Open Settings > OliForge Country Select.
@@ -83,6 +91,13 @@ Available display languages:
 * Русский.
 
 All countries are enabled by default. Administrators may search, select all, clear all or enable countries individually.
+
+Default country and pinned countries (optional preset):
+* Tick "Enable the preset below for all country selectors" to turn it on. It is off by default, so existing forms do not change after an update.
+* Default country: none (the placeholder is shown), automatic (from the WordPress locale), or one country.
+* Pinned countries: up to three countries shown at the top of the list, in the order chosen.
+* Countries that are not among the allowed countries are ignored.
+* The preset applies to selectors that use the allowed-countries setting. Options written in a form tag (default: and preferred:) always override it, and selectors that use a named list: from the Pro edition keep that list's own settings.
 
 
 == Developer API ==
@@ -125,6 +140,16 @@ Automatic mode falls back to English.
 3. Settings page: choose the name language and enable or disable countries globally.
 
 == Changelog ==
+
+= 3.3.0 =
+* Added an optional global preset on the settings page: a default country (none, automatic from the WordPress locale, or a chosen country) and up to three pinned countries, switched on by a checkbox. Off by default, so existing forms are unchanged. Options in a form tag override it.
+* Search results are now ranked: an exact ISO code comes first (typing "ua" shows Ukraine on top), then names starting with the query, then other matches. Arrow-key navigation follows the ranked order.
+* Pinned countries are shown in the order they are given, not alphabetically.
+* Fixed the default:XX and default:auto tag options, which were ignored with current Contact Form 7 versions.
+* Fixed custom placeholder text written as placeholder "Text" (the form generator output) being ignored.
+* Fixed the dropdown not opening when the chevron or flag was clicked inside a <label>.
+* Hardened include: it no longer opens every country when it contains no valid ISO code (for example include:UKR); the field accepts no country until the tag is corrected.
+* A value that is not a valid country in a required field now reports "Please select a valid country" instead of the generic required message.
 
 = 3.2.15 =
 * Removed the bundled translation files and the manual text domain loading: translations are now delivered through translate.wordpress.org language packs. Country names in all supported languages are not affected.

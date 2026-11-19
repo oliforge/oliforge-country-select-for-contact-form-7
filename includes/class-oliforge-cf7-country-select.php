@@ -13,6 +13,10 @@ final class OliForge_CF7_Country_Select {
 	private const OPTION_ALLOWED_COUNTRIES = 'oliforge_cf7_country_select_allowed_countries';
 	private const OPTION_DISPLAY_LANGUAGE  = 'oliforge_cf7_country_select_display_language';
 	private const OPTION_VALIDATION_BORDER = 'oliforge_cf7_country_select_validation_border';
+	private const OPTION_PRESET_ENABLED    = 'oliforge_cf7_country_select_preset_enabled';
+	private const OPTION_PRESET_DEFAULT    = 'oliforge_cf7_country_select_preset_default';
+	private const OPTION_PRESET_PREFERRED  = 'oliforge_cf7_country_select_preset_preferred';
+	private const PRESET_PREFERRED_SLOTS   = 3;
 
 	/** @var array<string, string> */
 	private static array $countries = array();
@@ -184,6 +188,11 @@ final class OliForge_CF7_Country_Select {
 		$extra_class = $tag->get_class_option();
 		$id          = sanitize_html_class( $tag->get_id_option() );
 		$placeholder = $tag->get_option( 'placeholder', '', true );
+		// The tag generator writes `placeholder "Text"`: the flag plus a quoted value.
+		// Only the placeholder:Text form was read before, so custom text was lost.
+		if ( ( ! is_string( $placeholder ) || '' === trim( $placeholder ) ) && $tag->has_option( 'placeholder' ) && ! empty( $tag->values ) ) {
+			$placeholder = (string) reset( $tag->values );
+		}
 		$language    = self::resolve_language( $tag->get_option( 'language', '', true ) );
 		$show_validation_border = self::sanitize_validation_border( get_option( self::OPTION_VALIDATION_BORDER, '0' ) );
 
@@ -197,13 +206,29 @@ final class OliForge_CF7_Country_Select {
 		// Unresolved list: (unknown/deleted slug, or Pro inactive) renders no
 		// country options at all — see resolve_country_context(). Never
 		// falls back to the default allowlist for an explicit list: option.
-		$countries = self::resolve_country_context( $tag, $language )['countries'];
-		$preferred = self::parse_country_option( $tag->get_option( 'preferred', '', true ) );
+		$context   = self::resolve_country_context( $tag, $language );
+		$countries = $context['countries'];
+		// The global preset applies only to fields that use the Free allowlist
+		// (no list: option, or list:default). Fields with a named Pro list never
+		// get it. Options written in the tag always win over the preset.
+		$preset      = 'default' === $context['source'] ? self::get_global_preset() : null;
+		$preferred_raw = $tag->get_option( 'preferred', '', true );
+		if ( $preset && '' === trim( is_string( $preferred_raw ) ? $preferred_raw : '' ) ) {
+			$preferred = $preset['preferred'];
+		} else {
+			$preferred = self::parse_country_option( $preferred_raw );
+		}
 		$preferred = array_values( array_intersect( $preferred, array_keys( $countries ) ) );
 
 		$selected = self::get_submitted_value( $name );
 		if ( '' === $selected ) {
-			$default = $tag->get_default_option( null, 'default:' );
+			// get_option(), not get_default_option(): CF7 6.x only resolves the
+			// special user_/post_meta/get values there, so a literal default:UA or
+			// default:auto never reached this code.
+			$default = $tag->get_option( 'default', '', true );
+			if ( $preset && ( ! is_string( $default ) || '' === trim( $default ) ) ) {
+				$default = $preset['default'];
+			}
 			if ( is_string( $default ) && 'auto' === strtolower( trim( $default ) ) ) {
 				$selected = self::get_locale_country_code();
 			} else {
@@ -264,7 +289,12 @@ final class OliForge_CF7_Country_Select {
 		$html .= '<select ' . wpcf7_format_atts( $atts ) . '>';
 		$html .= '<option value=""' . selected( $selected, '', false ) . ' data-placeholder-option="1">' . esc_html( $placeholder ) . '</option>';
 
-		foreach ( $countries as $code => $country ) {
+		// Pinned countries first, in the order they were given (tag option or preset);
+		// the rest keep their order. The script keeps this relative order when it
+		// moves pinned options to the top.
+		$ordered_codes = array_merge( $preferred, array_diff( array_keys( $countries ), $preferred ) );
+		foreach ( $ordered_codes as $code ) {
+			$country  = $countries[ $code ];
 			$flag_url = OLIFORGE_CF7_COUNTRY_SELECT_URL . 'assets/flags/' . strtolower( $code ) . '.svg';
 			$html    .= sprintf(
 				'<option value="%1$s" data-flag="%2$s"%3$s%4$s>%5$s</option>',
@@ -294,7 +324,7 @@ final class OliForge_CF7_Country_Select {
 
 		if ( $is_present && ! $is_string ) {
 			$result->invalidate( $tag, __( 'Please select a valid country.', 'oliforge-country-select-for-contact-form-7' ) );
-		} elseif ( $tag->is_required() && ( ! $is_present || '' === $raw_trimmed || '' === $value ) ) {
+		} elseif ( $tag->is_required() && ( ! $is_present || '' === $raw_trimmed ) ) {
 			$result->invalidate( $tag, wpcf7_get_message( 'invalid_required' ) );
 		} elseif ( '' !== $raw_trimmed && ( '' === $value || ! isset( $allowed[ $value ] ) ) ) {
 			$result->invalidate( $tag, __( 'Please select a valid country.', 'oliforge-country-select-for-contact-form-7' ) );
@@ -427,6 +457,36 @@ final class OliForge_CF7_Country_Select {
 			)
 		);
 
+		register_setting(
+			'oliforge_cf7_country_select_settings',
+			self::OPTION_PRESET_ENABLED,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( __CLASS__, 'sanitize_validation_border' ),
+				'default'           => '0',
+			)
+		);
+
+		register_setting(
+			'oliforge_cf7_country_select_settings',
+			self::OPTION_PRESET_DEFAULT,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( __CLASS__, 'sanitize_preset_default' ),
+				'default'           => '',
+			)
+		);
+
+		register_setting(
+			'oliforge_cf7_country_select_settings',
+			self::OPTION_PRESET_PREFERRED,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( __CLASS__, 'sanitize_preset_preferred' ),
+				'default'           => array(),
+			)
+		);
+
 		// Add-ons may attach independent settings/UI through the public extension hooks.
 	}
 
@@ -452,6 +512,38 @@ final class OliForge_CF7_Country_Select {
 
 	public static function sanitize_validation_border( $value ): string {
 		return '1' === (string) $value ? '1' : '0';
+	}
+
+	/** Empty (no preselection), "auto" (WordPress locale) or one ISO alpha-2 code. */
+	public static function sanitize_preset_default( $value ): string {
+		$value = is_string( $value ) ? strtolower( trim( wp_unslash( $value ) ) ) : '';
+		if ( 'auto' === $value ) {
+			return 'auto';
+		}
+		$code = self::normalize_country_code( strtoupper( $value ) );
+		return '' !== $code && isset( self::$countries[ $code ] ) ? $code : '';
+	}
+
+	/** Up to three unique ISO codes, in the order chosen; empty slots are dropped. */
+	public static function sanitize_preset_preferred( $value ): array {
+		return array_slice( self::sanitize_allowed_countries( $value ), 0, self::PRESET_PREFERRED_SLOTS );
+	}
+
+	/**
+	 * The single global preset (default country + up to three preferred
+	 * countries). Null while the "Enable preset" checkbox is off, so saved
+	 * values are ignored and existing forms behave as before.
+	 *
+	 * @return array{default: string, preferred: string[]}|null
+	 */
+	private static function get_global_preset(): ?array {
+		if ( '1' !== self::sanitize_validation_border( get_option( self::OPTION_PRESET_ENABLED, '0' ) ) ) {
+			return null;
+		}
+		return array(
+			'default'   => self::sanitize_preset_default( get_option( self::OPTION_PRESET_DEFAULT, '' ) ),
+			'preferred' => self::sanitize_preset_preferred( get_option( self::OPTION_PRESET_PREFERRED, array() ) ),
+		);
 	}
 
 
@@ -592,6 +684,9 @@ final class OliForge_CF7_Country_Select {
 		$validation_border = self::sanitize_validation_border( get_option( self::OPTION_VALIDATION_BORDER, '0' ) );
 		$preview_language = self::resolve_language( $language_setting );
 		$preview_countries = self::get_translated_countries( $preview_language );
+		$preset_enabled   = self::sanitize_validation_border( get_option( self::OPTION_PRESET_ENABLED, '0' ) );
+		$preset_default   = self::sanitize_preset_default( get_option( self::OPTION_PRESET_DEFAULT, '' ) );
+		$preset_preferred = self::sanitize_preset_preferred( get_option( self::OPTION_PRESET_PREFERRED, array() ) );
 		?>
 		<div class="wrap oliforge-country-settings">
 			<div class="oliforge-header">
@@ -642,6 +737,44 @@ final class OliForge_CF7_Country_Select {
 								<?php echo esc_html__( 'Show a validation border on the visible country selector', 'oliforge-country-select-for-contact-form-7' ); ?>
 							</label>
 							<p class="description"><?php echo esc_html__( 'Disabled by default. The Contact Form 7 validation message and accessibility state remain active.', 'oliforge-country-select-for-contact-form-7' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php echo esc_html__( 'Default country and pinned countries', 'oliforge-country-select-for-contact-form-7' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr( self::OPTION_PRESET_ENABLED ); ?>" value="1" <?php checked( $preset_enabled, '1' ); ?>>
+								<span class="oliforge-preset-toggle"><?php echo esc_html__( 'Enable the preset below for all country selectors', 'oliforge-country-select-for-contact-form-7' ); ?></span>
+							</label>
+							<p class="description"><?php echo esc_html__( 'Disabled by default. When disabled, the values below are ignored. A form tag can override them with default: and preferred:.', 'oliforge-country-select-for-contact-form-7' ); ?></p>
+							<p>
+								<label for="oliforge-preset-default"><strong><?php echo esc_html__( 'Default country', 'oliforge-country-select-for-contact-form-7' ); ?></strong></label><br>
+								<select id="oliforge-preset-default" class="oliforge-select" name="<?php echo esc_attr( self::OPTION_PRESET_DEFAULT ); ?>">
+									<option value="" <?php selected( $preset_default, '' ); ?>><?php echo esc_html__( 'None — show the placeholder', 'oliforge-country-select-for-contact-form-7' ); ?></option>
+									<option value="auto" <?php selected( $preset_default, 'auto' ); ?>><?php echo esc_html__( 'Automatic — from the WordPress locale', 'oliforge-country-select-for-contact-form-7' ); ?></option>
+									<?php foreach ( $preview_countries as $code => $country_name ) : ?>
+										<option value="<?php echo esc_attr( $code ); ?>" <?php selected( $preset_default, $code ); ?>><?php echo esc_html( $country_name ); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</p>
+							<p class="description"><?php echo esc_html__( 'Automatic uses the country of the WordPress locale (not the visitor’s IP address). If that country is not in the list, nothing is preselected.', 'oliforge-country-select-for-contact-form-7' ); ?></p>
+							<?php for ( $slot = 0; $slot < self::PRESET_PREFERRED_SLOTS; $slot++ ) : ?>
+								<p>
+									<label for="oliforge-preset-preferred-<?php echo esc_attr( (string) $slot ); ?>"><strong>
+										<?php
+										/* translators: %d: position of the pinned country (1, 2 or 3). */
+										echo esc_html( sprintf( __( 'Pinned country %d', 'oliforge-country-select-for-contact-form-7' ), $slot + 1 ) );
+										?>
+									</strong></label><br>
+									<select id="oliforge-preset-preferred-<?php echo esc_attr( (string) $slot ); ?>" class="oliforge-select" name="<?php echo esc_attr( self::OPTION_PRESET_PREFERRED ); ?>[]">
+										<option value=""><?php echo esc_html__( 'None', 'oliforge-country-select-for-contact-form-7' ); ?></option>
+										<?php foreach ( $preview_countries as $code => $country_name ) : ?>
+											<option value="<?php echo esc_attr( $code ); ?>" <?php selected( $preset_preferred[ $slot ] ?? '', $code ); ?>><?php echo esc_html( $country_name ); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</p>
+							<?php endfor; ?>
+							<p class="description"><?php echo esc_html__( 'Pinned countries appear at the top of the list, in this order. Countries that are not allowed above are ignored. Applies only to selectors that use the allowed-countries setting, not to named lists.', 'oliforge-country-select-for-contact-form-7' ); ?></p>
 						</td>
 					</tr>
 				</table>
@@ -798,9 +931,16 @@ final class OliForge_CF7_Country_Select {
 		$include = self::parse_country_option( $tag->get_option( 'include', '', true ) );
 		$exclude = self::parse_country_option( $tag->get_option( 'exclude', '', true ) );
 		$slug    = sanitize_title( (string) $tag->get_option( 'list', '', true ) );
+		// include: written but resolving to no valid code (e.g. include:UKR) means
+		// "nothing allowed", never "no restriction": a typo must not open every country.
+		$include_raw    = $tag->get_option( 'include', '', true );
+		$include_broken = is_string( $include_raw ) && '' !== trim( $include_raw ) && ! $include;
 
 		if ( '' === $slug || self::DEFAULT_LIST_SLUG === $slug ) {
 			$countries = self::apply_include_exclude( self::get_allowed_countries( $language ), $include, $exclude );
+			if ( $include_broken ) {
+				$countries = array();
+			}
 			return array(
 				'resolved'  => true,
 				'source'    => 'default',
@@ -827,6 +967,9 @@ final class OliForge_CF7_Country_Select {
 		$countries = apply_filters( 'oliforge_country_select_allowed_countries', $countries, $language );
 		$countries = self::sanitize_allowed_country_map( $countries );
 		$countries = self::apply_include_exclude( $countries, $include, $exclude );
+		if ( $include_broken ) {
+			$countries = array();
+		}
 
 		return array(
 			'resolved'  => true,

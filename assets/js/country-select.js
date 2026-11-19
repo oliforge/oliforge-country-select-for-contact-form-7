@@ -257,6 +257,23 @@
       list.appendChild(item);
     });
 
+    // Search results are ranked, not just filtered: an exact ISO code first
+    // (typing "ua" puts Ukraine on top), then names that start with the query,
+    // then names with a word that starts with it, then any other match. The
+    // original order (pinned countries, separator) is restored when the box is
+    // cleared, and the separator is hidden while ranking.
+    const originalOrder = [...list.children];
+    const rankOf = ({ option }, query) => {
+      const code = normalize(option.value);
+      const name = normalize(option.textContent);
+      if (code === query) return 0;
+      if (name.startsWith(query)) return 1;
+      if (name.split(/[\s\-\u2013,.()'\u2019&/]+/).some((word) => word.startsWith(query))) return 2;
+      if (name.includes(query)) return 3;
+      return 4;
+    };
+    const visibleOptions = () => [...list.querySelectorAll('.oliforge-cf7-country-select__option')].filter((element) => !element.hidden);
+
     search.addEventListener('input', () => {
       const query = normalize(search.value);
       let visible = 0;
@@ -266,20 +283,33 @@
         if (match) visible += 1;
       });
       empty.hidden = visible !== 0;
+
+      const fragment = document.createDocumentFragment();
+      if (query) {
+        items
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry }) => !entry.element.hidden)
+          .sort((a, b) => rankOf(a.entry, query) - rankOf(b.entry, query) || a.index - b.index)
+          .forEach(({ entry }) => fragment.appendChild(entry.element));
+      } else {
+        originalOrder.forEach((node) => fragment.appendChild(node));
+      }
+      list.appendChild(fragment);
+      list.querySelectorAll('.oliforge-cf7-country-select__separator').forEach((separator) => { separator.hidden = !!query; });
     });
     search.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { event.preventDefault(); close(true); return; }
       if (event.key === 'ArrowDown') {
-        const firstVisible = items.find(({ element }) => !element.hidden);
-        if (firstVisible) { event.preventDefault(); firstVisible.element.focus(); }
+        const firstVisible = visibleOptions()[0];
+        if (firstVisible) { event.preventDefault(); firstVisible.focus(); }
       }
       if (event.key === 'Enter') {
-        const visibleItems = items.filter(({ element }) => !element.hidden);
-        if (visibleItems.length === 1) { event.preventDefault(); visibleItems[0].element.click(); }
+        const visibleItems = visibleOptions();
+        if (visibleItems.length === 1) { event.preventDefault(); visibleItems[0].click(); }
       }
     });
     list.addEventListener('keydown', (event) => {
-      const visible = items.map(({ element }) => element).filter((element) => !element.hidden);
+      const visible = visibleOptions();
       const index = visible.indexOf(document.activeElement);
       if (event.key === 'Escape') { event.preventDefault(); close(true); }
       else if (event.key === 'ArrowDown' && index > -1) { event.preventDefault(); (visible[index + 1] || visible[0])?.focus(); }
@@ -289,7 +319,11 @@
     // Bound to the whole row (not just the input) since the flag/chevron are
     // now normal flex siblings of the input rather than overlays sitting on
     // top of it — a click on either icon needs to open the list too.
-    controlWrap.addEventListener('click', () => {
+    controlWrap.addEventListener('click', (event) => {
+      // Inside a <label> a click on the flag/chevron is forwarded by the browser
+      // to the first labelable element — the hidden native <select> — as a second
+      // click outside this wrapper, which would close the list again at once.
+      if (event.target !== control) event.preventDefault();
       control.focus();
       dropdown.hidden ? open() : close(false);
     });
